@@ -6,8 +6,8 @@ import torch
 
 # ========================================================
 #   Usefull paths
-_datasetFeaturesFiles = {"miniImagenet": "./checkpoints/miniImagenet/WideResNet28_10_S2M2_R/last/novel_features.plk",
-                         "CUB": "./checkpoints/CUB/WideResNet28_10_S2M2_R/last/novel_features.plk",}
+_datasetFeaturesFiles = {"miniImagenet": "./checkpoints/miniImagenet/novel_features.plk",
+                         "CUB": "./checkpoints/CUB/novel_features.plk",}
 _cacheDir = "./cache"
 _maxRuns = 10000
 _min_examples = -1
