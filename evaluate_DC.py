@@ -31,9 +31,9 @@ def get_base_class_statistics(file):
     
     return torch_means, torch_cov
 
-def transform_tukey(data, lam):
+def transform_tukey(data, lam, tukey):
     if tukey == False:
-      return data.clone().detach()
+        return data.clone().detach()
     transformed_data = torch.zeros(data.shape).to(device)
     for i in range(len(data)):
         feature = data[i]
@@ -54,11 +54,11 @@ def calibrate(base_means, base_cov, feature, k, alpha):
     calibrated_cov = torch.sum(selected_cov, axis=0) / k + alpha
     return calibrated_mean, calibrated_cov
     
-def get_accuracy(ndatas, labels, lam, n_generation):  
+def get_accuracy(ndatas, labels, lam, n_generation, tukey):  
     acc = []
     # run algorithm on each task 
     for task, labels in tqdm(zip(ndatas, labels)):
-        tukey_data = transform_tukey(task, lam)
+        tukey_data = transform_tukey(task, lam, tukey)
         # separate train data and labels from tests
         support_data = tukey_data[:n_train]
         support_labels = labels[:n_train]
@@ -71,13 +71,10 @@ def get_accuracy(ndatas, labels, lam, n_generation):
         # sample from calibrated distribution
         for feature, label in zip(support_data, support_labels):
             calibrated_mean, calibrated_cov = calibrate(base_means, base_cov, feature, 2, alpha)
-            calibrated_distribution = MultivariateNormal(calibrated_mean, calibrated_cov)
-            sampled_data = torch.zeros(n_generation, len(calibrated_mean)).to(device)
-            sampled_labels = torch.zeros(n_generation).to(device)
-            for i in range(n_generation):
-                sampled_data[i] = calibrated_distribution.sample()
-                sampled_labels[i] = label
-                
+            sampled_data_numpy = np.random.multivariate_normal(mean=calibrated_mean, cov=calibrated_cov, size=n_generation)
+            sampled_data = torch.tensor(sampled_data_numpy)
+            sampled_labels = torch.ones(n_generation).to(device)
+            sampled_labels = sampled_labels * label
             # bring all the data required for training together
             train_data = torch.cat((train_data, sampled_data), dim=0)
             train_labels = torch.cat((train_labels, sampled_labels), dim=0)
@@ -93,41 +90,44 @@ def get_accuracy(ndatas, labels, lam, n_generation):
     return np.mean(acc)
 
 import matplotlib.pyplot as plt
-def vary_lambda(ndatas, labels):
-  lambdas = [-2, -1, -0.5, 0, 0.5, 1, 2]
+#def vary_lambda(ndatas, labels):
+  #lambdas = [-2, -1, -0.5, 0, 0.5, 1, 2]
 
   # accs_no_gen = []
   # n_generation = 0
   # for lam in lambdas:
   #   accs_no_gen.append(get_accuracy(ndatas, labels, lam, n_generation))
 
-  accs_with_gen = []
-  n_generation = int(750 / n_shot)
+  #accs_with_gen = []
+  #n_generation = int(750 / n_shot)
   # for lam in lambdas:
-  accs_with_gen.append(get_accuracy(ndatas, labels, -2, n_generation))
+  #accs_with_gen.append(get_accuracy(ndatas, labels, -2, n_generation))
 
-  plt.figure(figsize=(10, 10))
-  plt.plot(accs, label=' training w/ generated features')
+  #plt.figure(figsize=(10, 10))
+  #plt.plot(accs, label=' training w/ generated features')
   # plt.plot([3, 4, 5, 6, 7, 8, 7, 6, 5], label='training w/o generated features')
-  plt.xlabel('Lambda parameter in Tukey transformation', fontsize=13)
-  plt.ylabel('Test accuracy (5way-1shot)', fontsize=13)
-  plt.legend(prop={'size': 12})
+  #plt.xlabel('Lambda parameter in Tukey transformation', fontsize=13)
+  #plt.ylabel('Test accuracy (5way-1shot)', fontsize=13)
+  #plt.legend(prop={'size': 12})
 
-  plt.savefig('lambda variation.png')
-
+  #plt.savefig('lambda variation.png')
+  
 def vary_n_generation(ndatas, labels): 
   n_generations = [0, 10, 50, 100, 150, 300, 500, 650, 750]
 
   tukey = False
   accs_no_tukey = []
   for n_generation in n_generations:
-    accs_no_tukey.append(get_accuracy(ndatas, labels, lam, n_generation))
-
+    acc = get_accuracy(ndatas, labels, lam, n_generation, tukey)
+    accs_no_tukey.append(acc)
+    print(acc)
+    
   tukey = True
   accs_with_tukey = []
   for n_generation in n_generations:
-    accs_with_tukey.append(get_accuracy(ndatas, labels, lam, n_generation))
-
+    acc = get_accuracy(ndatas, labels, lam, n_generation, tukey)
+    accs_with_tukey.append(acc)
+    print(acc)
   plt.figure(figsize=(10, 10))
   plt.plot(n_generations, accs_no_tukey, label='training w/o Tukey transformation')
   plt.plot(n_generations, accs_with_tukey, label='training w Tukey transformation')
@@ -136,13 +136,13 @@ def vary_n_generation(ndatas, labels):
   plt.ylabel('Test accuracy (5way-1shot)', fontsize=13)
   plt.legend(prop={'size': 12})
 
-  plt.savefig('./drive/My Drive/n generation variation.png')
+  plt.savefig('n generation variation.png')
   
 from sklearn.manifold import TSNE
 def generate_clusters(ndatas, labels):
     counter = 0
     for task, labels in tqdm(zip(ndatas, labels)):
-        tukey_data = transform_tukey(task, lam)
+        tukey_data = transform_tukey(task, lam, tukey)
         # separate train data and labels from tests
         support_data = tukey_data[:n_train]
         support_labels = labels[:n_train]
@@ -156,14 +156,15 @@ def generate_clusters(ndatas, labels):
         # sample from calibrated distribution
         for feature, label in zip(support_data, support_labels):
             calibrated_mean, calibrated_cov = calibrate(base_means, base_cov, feature, 2, alpha)
-            calibrated_distribution = MultivariateNormal(calibrated_mean, calibrated_cov)
-            sampled_data = torch.zeros(n_generation, len(calibrated_mean)).to(device)
-            sampled_labels = torch.zeros(n_generation).to(device)
-            for i in range(n_generation):
-                sampled_data[i] = calibrated_distribution.sample()
-                sampled_labels[i] = label
-                
-            tsne = TSNE(n_components=2, perplexity=5, early_exaggeration=30).fit_transform(sampled_data)
+            sampled_data_numpy = np.random.multivariate_normal(mean=calibrated_mean, cov=calibrated_cov, size=n_generation)
+            sampled_data = torch.tensor(sampled_data_numpy)
+            sampled_labels = torch.ones(n_generation).to(device)
+            sampled_labels = sampled_labels * label
+            # bring all the data required for training together
+            train_data = torch.cat((train_data, sampled_data), dim=0)
+            train_labels = torch.cat((train_labels, sampled_labels), dim=0)
+            
+            tsne = TSNE(n_components=2, perplexity=3, early_exaggeration=30, n_iter=5000).fit_transform(sampled_data)
             plt.scatter(tsne[:,0], tsne[:,1], c=colours[label], s=0.5)
             
         tsne = TSNE(n_components=2).fit_transform(support_data)
@@ -178,14 +179,13 @@ dataset = 'miniImagenet'
 n_shot = 1
 n_ways = 5
 n_queries = 15
-n_runs = 10
+n_runs = 5
 n_train = n_ways * n_shot
 n_test = n_ways * n_queries
 n_total = n_train + n_test
 lam = 0.5
 alpha = 0.21
-n_generation = int(200 / n_shot)
-tukey = True
+n_generation = int(750 / n_shot)
 
 if __name__ == '__main__':
     
@@ -200,11 +200,12 @@ if __name__ == '__main__':
                 n_shot + n_queries, 5).clone().view(n_runs, n_total).to(device)
     base_means = None
     base_cov = None
-    base_features_path = "./checkpoints/%s/base_features.plk"%dataset
+    base_features_path = "checkpoints/%s/base_features.plk"%dataset
     with open(base_features_path, 'rb') as input_file:
         base_means, base_cov = get_base_class_statistics(input_file)
         
     from torch.distributions.multivariate_normal import MultivariateNormal
     
-    #vary_n_generation(ndatas, labels)
-    generate_clusters(ndatas, labels)
+    vary_n_generation(ndatas, labels)
+    #generate_clusters(ndatas, labels)
+    #print(get_accuracy(ndatas, labels, lam, n_generation, True))
